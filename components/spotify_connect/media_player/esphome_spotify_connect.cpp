@@ -877,6 +877,20 @@ void SpotifyConnectComponent::control(const media_player::MediaPlayerCall &call)
         this->publish_state();
         break;
 
+      case media_player::MEDIA_PLAYER_COMMAND_NEXT:
+        if (this->spirc_handler_) {
+          ESP_LOGI(TAG, "NEXT: calling spirc_handler_->nextSong()");
+          this->spirc_handler_->nextSong();
+        }
+        break;
+
+      case media_player::MEDIA_PLAYER_COMMAND_PREVIOUS:
+        if (this->spirc_handler_) {
+          ESP_LOGI(TAG, "PREV: calling spirc_handler_->previousSong()");
+          this->spirc_handler_->previousSong();
+        }
+        break;
+
       default:
         break;
     }
@@ -936,6 +950,8 @@ void SpotifyConnectComponent::set_volume_(float volume, bool publish) {
 media_player::MediaPlayerTraits SpotifyConnectComponent::get_traits() {
   auto traits = media_player::MediaPlayerTraits();
   traits.set_supports_pause(true);
+  traits.add_feature_flags(media_player::MediaPlayerEntityFeature::NEXT_TRACK |
+                           media_player::MediaPlayerEntityFeature::PREVIOUS_TRACK);
   return traits;
 }
 
