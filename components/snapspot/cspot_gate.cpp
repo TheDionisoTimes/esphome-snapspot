@@ -4,6 +4,6 @@ std::atomic<bool> cspot_active{false};
 std::atomic<bool> cspot_shutdown_pending{false};
 std::atomic<bool> cspot_tasks_exited{true};
 std::atomic<bool> cspot_fully_stopped{true};
-std::atomic<bool> audio_path_free{false};
+std::atomic<bool> audio_path_free{true};
 CspotCallbacks cspot_callbacks{};
 }
