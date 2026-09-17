@@ -347,7 +347,9 @@ void SpircHandler::notify() {
 bool SpircHandler::skipSong(TrackQueue::SkipDirection dir) {
   bool skipped = trackQueue->skipTrack(dir);
 
-  trackPlayer->resetState(!skipped);
+  if (skipped) {
+    trackPlayer->resetState(false);
+  }
 
   return skipped;
 }
