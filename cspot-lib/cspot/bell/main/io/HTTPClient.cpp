@@ -130,6 +130,12 @@ void HTTPClient::Response::post(const std::string& url, Headers headers,
   return this->rawRequest(url, method, body, headers);
 }
 
+void HTTPClient::Response::put(const std::string& url, Headers headers,
+                                const std::vector<uint8_t>& body) {
+  std::string method = "PUT";
+  return this->rawRequest(url, method, body, headers);
+}
+
 size_t HTTPClient::Response::contentLength() {
   return contentSize;
 }

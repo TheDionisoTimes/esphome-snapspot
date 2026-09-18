@@ -1386,17 +1386,16 @@ void SpotifyConnectComponent::try_auto_transfer_() {
 
   ESP_LOGI(TAG, "Auto-transfer: PUT /v1/me/player device_id=%s", device_id.c_str());
 
-  // Use bell::HTTPClient to send a PUT request via rawRequest
+  // Use bell::HTTPClient::put() static method — same pattern as AccessKeyFetcher::post()
+  // This avoids the rawRequest() header/impl arg-order mismatch bug
   try {
-    auto response = std::make_unique<bell::HTTPClient::Response>();
     bell::HTTPClient::Headers headers = {
       {"Authorization", "Bearer " + token},
       {"Content-Type", "application/json"}
     };
     std::vector<uint8_t> body_bytes(body.begin(), body.end());
-    response->connect("https://api.spotify.com/v1/me/player");
-    // NOTE: bell::HTTPClient::Response::rawRequest impl has (url, method, ...) NOT (method, url, ...) as the header declares
-    response->rawRequest("https://api.spotify.com/v1/me/player", "PUT", body_bytes, headers);
+    auto response = bell::HTTPClient::put(
+      "https://api.spotify.com/v1/me/player", headers, body_bytes);
 
     int status = response->statusCode();
     if (status == 204 || status == 202) {
