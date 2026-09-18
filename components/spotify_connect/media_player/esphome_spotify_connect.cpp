@@ -1395,7 +1395,8 @@ void SpotifyConnectComponent::try_auto_transfer_() {
     };
     std::vector<uint8_t> body_bytes(body.begin(), body.end());
     response->connect("https://api.spotify.com/v1/me/player");
-    response->rawRequest("PUT", "https://api.spotify.com/v1/me/player", body_bytes, headers);
+    // NOTE: bell::HTTPClient::Response::rawRequest impl has (url, method, ...) NOT (method, url, ...) as the header declares
+    response->rawRequest("https://api.spotify.com/v1/me/player", "PUT", body_bytes, headers);
 
     int status = response->statusCode();
     if (status == 204 || status == 202) {
