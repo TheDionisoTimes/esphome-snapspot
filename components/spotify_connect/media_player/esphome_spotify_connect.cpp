@@ -90,7 +90,7 @@ static void nvs_save_string_blob(const char *key, const std::string &data) {
   nvs_close(handle);
 }
 
-static void nvs_erase_key(const char *key) {
+static void nvs_erase_cred(const char *key) {
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
@@ -1057,7 +1057,7 @@ void SpotifyConnectComponent::nvs_save_cred_(const std::string &json) {
 }
 
 void SpotifyConnectComponent::nvs_clear_cred_() {
-  nvs_erase_key(NVS_KEY_CRED);
+  nvs_erase_cred(NVS_KEY_CRED);
   ESP_LOGI(TAG, "Auto-reconnect: cleared saved credentials from NVS");
 }
 
