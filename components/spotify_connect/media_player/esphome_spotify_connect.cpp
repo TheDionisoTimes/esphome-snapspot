@@ -896,11 +896,10 @@ void SpotifyConnectComponent::loop() {
     if (this->state == media_player::MEDIA_PLAYER_STATE_IDLE && !this->is_playing_) {
       if (this->idle_since_ms_ == 0) {
         this->idle_since_ms_ = millis();
-      } else if (millis() - this->idle_since_ms_ > 60000) {
-        ESP_LOGI(TAG, "Idle timeout (60s) — requesting session shutdown");
-        this->pending_shutdown_ = true;
-        esphome::snapspot::cspot_shutdown_pending = true;
       }
+      // DISABLED: Idle timeout was killing the Spotify Connect session after 60s
+      // of no playback, making the device disappear from Spotify's device list.
+      // The session should stay alive indefinitely so the user can select it anytime.
     } else {
       this->idle_since_ms_ = 0;
     }
