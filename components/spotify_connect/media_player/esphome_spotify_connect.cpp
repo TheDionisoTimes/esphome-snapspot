@@ -1309,10 +1309,14 @@ void SpotifyConnectComponent::web_api_poll_() {
   uint32_t now = millis();
   // Don't poll for first 10s after boot (let connection stabilize)
   if (now < 10000) return;
+  // DISABLED: Web API polling causes 429 rate limiting and token conflicts
+  // with cspot's internal AccessKeyFetcher. Display works via SPIRC when
+  // ESP32 is the active Spotify Connect output.
+  return;
   if (this->web_api_retry_after_ms_ && now < this->web_api_retry_after_ms_) {
     return; // Still in rate-limit cooldown
   }
-  if (now - this->web_api_last_poll_ms_ < 15000) {
+  if (now - this->web_api_last_poll_ms_ < 60000) {
     return;
   }
   this->web_api_last_poll_ms_ = now;
