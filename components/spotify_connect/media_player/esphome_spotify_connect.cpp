@@ -855,6 +855,9 @@ void SpotifyConnectComponent::loop() {
   // === WEB API POLLING: fetch "now playing" from Spotify Web API when we're NOT the active device ===
   this->web_api_poll_();
 
+  // === AUTO-TRANSFER: after Spotify Connect is ready, try to transfer playback here ===
+  this->try_auto_transfer_();
+
   if (this->meta_q_hdl_) {
     SpotifyMetaUpdate meta_upd{};
     if (xQueueReceive(this->meta_q_hdl_, &meta_upd, 0) == pdTRUE) {
@@ -1329,6 +1332,80 @@ void SpotifyConnectComponent::web_api_poll_() {
   xTaskCreate(
     web_api_task_wrapper_, "web_api_poll", 16384, this, 3,
     &this->web_api_task_handle_);
+}
+
+// ============================================================
+// === AUTO-TRANSFER: transfer playback to this ESP32 at boot
+// ============================================================
+// After Spotify Connect is ready (Hello sent, session subscribed),
+// we call the Spotify Web API "PUT /v1/me/player" with our deviceId
+// to transfer the currently playing track to this device.
+// This makes the ESP32 the active output — just like pressing
+// "Spotify Station" in the phone's device picker, but automatic.
+// Unlike the disabled Web API polling, this is a SINGLE call at
+// boot, so it won't trigger 429 rate limiting.
+
+void SpotifyConnectComponent::try_auto_transfer_() {
+  // Only try once per boot
+  if (this->auto_transfer_tried_) return;
+
+  // Need an active Spotify Connect session (spirc_handler_ set, not shutting down)
+  if (!this->spirc_handler_ || this->pending_shutdown_) return;
+  if (!this->cspot_context_) return;
+
+  // Wait 15s after Spotify Connect ready before transferring
+  // (let mDNS propagate, let phone app see the device)
+  uint32_t now = millis();
+  if (this->auto_transfer_at_ms_ == 0) {
+    this->auto_transfer_at_ms_ = now + 15000;
+    ESP_LOGI(TAG, "Auto-transfer: will attempt in 15s (waiting for mDNS propagation)");
+    return;
+  }
+  if (now < this->auto_transfer_at_ms_) return;
+
+  // Already playing? No need to transfer
+  if (this->is_playing_) {
+    this->auto_transfer_tried_ = true;
+    return;
+  }
+
+  this->auto_transfer_tried_ = true;
+
+  // Get access token from cspot's own AccessKeyFetcher (login5 token)
+  std::string token = this->get_web_api_token_();
+  if (token.empty()) {
+    ESP_LOGW(TAG, "Auto-transfer: no access token, skipping");
+    return;
+  }
+
+  // Get our Spotify deviceId
+  std::string device_id = this->cspot_context_->config.deviceId;
+
+  // Build JSON body: {"device_ids": ["<our_device_id>"], "play": true}
+  std::string body = "{\"device_ids\":[\"" + device_id + "\"],\"play\":true}";
+
+  ESP_LOGI(TAG, "Auto-transfer: PUT /v1/me/player device_id=%s", device_id.c_str());
+
+  // Use bell::HTTPClient to send a PUT request via rawRequest
+  try {
+    auto response = std::make_unique<bell::HTTPClient::Response>();
+    bell::HTTPClient::Headers headers = {
+      {"Authorization", "Bearer " + token},
+      {"Content-Type", "application/json"}
+    };
+    std::vector<uint8_t> body_bytes(body.begin(), body.end());
+    response->connect("https://api.spotify.com/v1/me/player");
+    response->rawRequest("PUT", "https://api.spotify.com/v1/me/player", body_bytes, headers);
+
+    int status = response->statusCode();
+    if (status == 204 || status == 202) {
+      ESP_LOGI(TAG, "Auto-transfer: SUCCESS! Playback transferred to this device (%d)", status);
+    } else {
+      ESP_LOGW(TAG, "Auto-transfer: HTTP %d (expected 204 or 202)", status);
+    }
+  } catch (const std::exception &e) {
+    ESP_LOGW(TAG, "Auto-transfer: exception: %s", e.what());
+  }
 }
 
 }

@@ -100,6 +100,9 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   void nvs_clear_cred_();
   void start_auto_reconnect_();
 
+  // === AUTO-TRANSFER: transfer playback to this device at boot via Web API ===
+  void try_auto_transfer_();
+
   bool network_initialized_{false};
   bool is_playing_{false};
   bool draining_{false};
@@ -180,6 +183,10 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   uint32_t media_position_ms_{0};
   uint32_t media_position_updated_at_{0};
   uint32_t last_position_publish_ms_{0};
+
+  // === AUTO-TRANSFER state ===
+  bool auto_transfer_tried_{false};
+  uint32_t auto_transfer_at_ms_{0};
 
   // === WEB API: last-known "now playing" state (for display when not active device) ===
   std::string web_api_track_;
