@@ -855,8 +855,8 @@ void SpotifyConnectComponent::loop() {
   // === WEB API POLLING: fetch "now playing" from Spotify Web API when we're NOT the active device ===
   this->web_api_poll_();
 
-  // === AUTO-TRANSFER: after Spotify Connect is ready, try to transfer playback here ===
-  this->try_auto_transfer_();
+  // === AUTO-TRANSFER: disabled — cspot's login5 token gets 429 on Web API ===
+  // this->try_auto_transfer_();
 
   if (this->meta_q_hdl_) {
     SpotifyMetaUpdate meta_upd{};
