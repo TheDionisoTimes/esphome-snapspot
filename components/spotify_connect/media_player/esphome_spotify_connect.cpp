@@ -1305,12 +1305,14 @@ void SpotifyConnectComponent::web_api_poll_() {
     return;
   }
 
-  // Rate limit: every 30 seconds, plus respect Retry-After from 429
+  // Rate limit: every 60 seconds, plus respect Retry-After from 429
   uint32_t now = millis();
+  // Don't poll for first 30s after boot (let connection stabilize)
+  if (now < 30000) return;
   if (this->web_api_retry_after_ms_ && now < this->web_api_retry_after_ms_) {
     return; // Still in rate-limit cooldown
   }
-  if (now - this->web_api_last_poll_ms_ < 30000) {
+  if (now - this->web_api_last_poll_ms_ < 60000) {
     return;
   }
   this->web_api_last_poll_ms_ = now;
