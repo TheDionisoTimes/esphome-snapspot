@@ -823,18 +823,29 @@ void SpotifyConnectComponent::loop() {
   // === AUTO-RECONNECT: if network is up and we have saved creds, auto-authenticate ===
   if (this->network_initialized_ && this->mdns_registered_ &&
       !this->auth_in_progress_ && !this->spirc_handler_ &&
-      !this->auto_reconnect_started_ && !this->pending_shutdown_) {
+      !this->auto_reconnect_started_ && !this->pending_shutdown_ &&
+      !this->auto_reconnect_nvs_checked_) {
+    this->auto_reconnect_nvs_checked_ = true;
     std::string saved = this->nvs_load_cred_();
     if (!saved.empty()) {
-      if (this->auto_reconnect_delay_ms_ == 0) {
-        this->auto_reconnect_delay_ms_ = millis() + 5000; // 5s delay after network up
-      }
-      if (millis() >= this->auto_reconnect_delay_ms_) {
-        ESP_LOGI(TAG, "Auto-reconnect: starting automatic authentication from saved credentials");
-        this->auto_reconnect_started_ = true;
-        this->start_auto_reconnect_();
-      }
+      this->auto_reconnect_delay_ms_ = millis() + 5000; // 5s delay after network up
+      ESP_LOGI(TAG, "Auto-reconnect: found saved credentials in NVS (%u bytes), will reconnect in 5s",
+               (unsigned)saved.size());
+    } else {
+      ESP_LOGI(TAG, "Auto-reconnect: no saved credentials in NVS — waiting for first Zeroconf login");
     }
+  }
+
+  // Check if it's time to start auto-reconnect
+  if (this->auto_reconnect_nvs_checked_ &&
+      this->auto_reconnect_delay_ms_ > 0 &&
+      !this->auto_reconnect_started_ &&
+      !this->auth_in_progress_ && !this->spirc_handler_ &&
+      !this->pending_shutdown_ &&
+      millis() >= this->auto_reconnect_delay_ms_) {
+    ESP_LOGI(TAG, "Auto-reconnect: starting automatic authentication from saved credentials");
+    this->auto_reconnect_started_ = true;
+    this->start_auto_reconnect_();
   }
 
   if (this->meta_q_hdl_) {

@@ -137,6 +137,7 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   // === AUTO-RECONNECT state ===
   bool auto_reconnect_started_{false};
   bool auto_reconnect_from_nvs_{false};
+  bool auto_reconnect_nvs_checked_{false};
   uint32_t auto_reconnect_delay_ms_{0};
 
   audio_dac::AudioDac *audio_dac_{nullptr};
