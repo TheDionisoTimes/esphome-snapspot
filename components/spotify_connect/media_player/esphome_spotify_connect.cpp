@@ -1172,6 +1172,18 @@ void SpotifyConnectComponent::run_web_api_poll_() {
     return;
   }
 
+  if (status == 429) {
+    // Rate limited — check Retry-After header, default 30s
+    std::string_view ra = response->header("Retry-After");
+    uint32_t wait = 30;
+    if (!ra.empty()) {
+      try { wait = std::stoul(std::string(ra)); } catch (...) {}
+    }
+    this->web_api_retry_after_ms_ = millis() + wait * 1000;
+    ESP_LOGW(TAG, "Web API: 429 rate limited, retry after %us", wait);
+    return;
+  }
+
   if (status != 200) {
     ESP_LOGW(TAG, "Web API: HTTP %d", status);
     return;
@@ -1293,9 +1305,12 @@ void SpotifyConnectComponent::web_api_poll_() {
     return;
   }
 
-  // Rate limit: every 10 seconds
+  // Rate limit: every 30 seconds, plus respect Retry-After from 429
   uint32_t now = millis();
-  if (now - this->web_api_last_poll_ms_ < 10000) {
+  if (this->web_api_retry_after_ms_ && now < this->web_api_retry_after_ms_) {
+    return; // Still in rate-limit cooldown
+  }
+  if (now - this->web_api_last_poll_ms_ < 30000) {
     return;
   }
   this->web_api_last_poll_ms_ = now;

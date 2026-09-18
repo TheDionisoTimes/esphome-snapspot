@@ -167,6 +167,7 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   std::shared_ptr<cspot::AccessKeyFetcher> web_api_key_fetcher_{nullptr};
   uint32_t web_api_last_poll_ms_{0};
   uint32_t web_api_last_success_ms_{0};
+  uint32_t web_api_retry_after_ms_{0};
   bool web_api_task_running_{false};
   TaskHandle_t web_api_task_handle_{nullptr};
   std::atomic<bool> web_api_poll_requested_{false};
