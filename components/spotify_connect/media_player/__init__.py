@@ -10,7 +10,7 @@ from esphome.core import CORE
 CODEOWNERS = ["@farmed-switch"]
 
 DEPENDENCIES = ["esp32", "snapspot"]
-AUTO_LOAD = ["text_sensor", "sensor"]
+AUTO_LOAD = ["text_sensor", "sensor", "binary_sensor"]
 
 CONF_DEVICE_NAME = "device_name"
 CONF_SPOTIFY_MIN_DB = "spotify_min_db"
