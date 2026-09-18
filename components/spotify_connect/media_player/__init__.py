@@ -1,6 +1,6 @@
 from esphome import pins
 import esphome.codegen as cg
-from esphome.components import audio_dac, media_player, text_sensor, sensor
+from esphome.components import audio_dac, media_player, text_sensor, sensor, binary_sensor
 from esphome.components.esp32 import add_extra_script, add_idf_component, add_idf_sdkconfig_option, get_esp32_variant
 from pathlib import Path
 import esphome.config_validation as cv
@@ -24,6 +24,7 @@ CONF_ALBUM = "album"
 CONF_ALBUM_ART_URL = "album_art_url"
 CONF_DURATION = "duration"
 CONF_POSITION = "position"
+CONF_IS_PLAYING = "is_playing"
 
 spotify_connect_ns = cg.esphome_ns.namespace("spotify_connect")
 SpotifyConnectComponent = spotify_connect_ns.class_(
@@ -57,6 +58,7 @@ CONFIG_SCHEMA = cv.All(
                 unit_of_measurement="s",
                 accuracy_decimals=0,
             ),
+            cv.Optional(CONF_IS_PLAYING): binary_sensor.binary_sensor_schema(),
         }
     )
     .extend(cv.COMPONENT_SCHEMA),
@@ -158,3 +160,6 @@ async def to_code(config):
     if CONF_POSITION in config:
         s = await sensor.new_sensor(config[CONF_POSITION])
         cg.add(var.set_position_sensor(s))
+    if CONF_IS_PLAYING in config:
+        s = await binary_sensor.new_binary_sensor(config[CONF_IS_PLAYING])
+        cg.add(var.set_is_playing_sensor(s))

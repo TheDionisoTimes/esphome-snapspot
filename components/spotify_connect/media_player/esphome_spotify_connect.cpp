@@ -26,6 +26,10 @@
 
 #include <atomic>
 
+#include "AccessKeyFetcher.h"
+#include "HTTPClient.h"
+#include "cJSON.h"
+
 namespace esphome::spotify_connect {
 
 struct SpotifyMetaUpdate {
@@ -848,6 +852,9 @@ void SpotifyConnectComponent::loop() {
     this->start_auto_reconnect_();
   }
 
+  // === WEB API POLLING: fetch "now playing" from Spotify Web API when we're NOT the active device ===
+  this->web_api_poll_();
+
   if (this->meta_q_hdl_) {
     SpotifyMetaUpdate meta_upd{};
     if (xQueueReceive(this->meta_q_hdl_, &meta_upd, 0) == pdTRUE) {
@@ -1099,6 +1106,209 @@ void SpotifyConnectComponent::start_auto_reconnect_() {
   xTaskCreateStaticPinnedToCore(
     auth_task_wrapper_, "spotify_auth", 16384, this, 5,
     this->auth_task_stack_, this->auth_task_buf_, 0);
+}
+
+// ============================================================
+// === WEB API POLLING: "now playing" when ESP32 is NOT the active output
+// ============================================================
+
+std::string SpotifyConnectComponent::get_web_api_token_() {
+  if (!this->cspot_context_) {
+    ESP_LOGW(TAG, "Web API: no cspot context");
+    return "";
+  }
+  if (!this->web_api_key_fetcher_) {
+    this->web_api_key_fetcher_ = std::make_shared<cspot::AccessKeyFetcher>(this->cspot_context_);
+  }
+  return this->web_api_key_fetcher_->getAccessKey();
+}
+
+void SpotifyConnectComponent::web_api_task_wrapper_(void *param) {
+  auto *self = static_cast<SpotifyConnectComponent *>(param);
+  self->run_web_api_poll_();
+  self->web_api_task_running_ = false;
+  self->web_api_task_handle_ = nullptr;
+  vTaskDelete(nullptr);
+}
+
+void SpotifyConnectComponent::run_web_api_poll_() {
+  std::string token = this->get_web_api_token_();
+  if (token.empty()) {
+    ESP_LOGW(TAG, "Web API: failed to get access token");
+    return;
+  }
+
+  ESP_LOGD(TAG, "Web API: fetching /v1/me/player ...");
+
+  auto response = bell::HTTPClient::get(
+    "https://api.spotify.com/v1/me/player",
+    {
+      {"Authorization", "Bearer " + token},
+      {"Accept", "application/json"}
+    }
+  );
+
+  if (!response) {
+    ESP_LOGW(TAG, "Web API: null response");
+    return;
+  }
+
+  int status = response->statusCode();
+  if (status == 204) {
+    // Not playing anything
+    ESP_LOGD(TAG, "Web API: 204 (no playback)");
+    if (this->web_api_has_data_) {
+      this->web_api_has_data_ = false;
+      this->web_api_is_playing_ = false;
+      this->web_api_track_.clear();
+      this->web_api_artist_.clear();
+      this->web_api_album_.clear();
+      this->web_api_image_url_.clear();
+      this->web_api_duration_ms_ = 0;
+      this->web_api_position_ms_ = 0;
+      this->web_api_position_updated_at_ = millis();
+      ESP_LOGD(TAG, "Web API: playback stopped, clearing sensors");
+    }
+    return;
+  }
+
+  if (status != 200) {
+    ESP_LOGW(TAG, "Web API: HTTP %d", status);
+    return;
+  }
+
+  std::string body = std::string(response->body());
+  if (body.empty()) {
+    ESP_LOGW(TAG, "Web API: empty body");
+    return;
+  }
+
+  cJSON *root = cJSON_Parse(body.c_str());
+  if (!root) {
+    ESP_LOGW(TAG, "Web API: JSON parse failed (%d chars)", (int)body.size());
+    return;
+  }
+
+  // is_playing
+  cJSON *j_playing = cJSON_GetObjectItemCaseSensitive(root, "is_playing");
+  bool playing = j_playing && cJSON_IsTrue(j_playing);
+
+  // progress_ms
+  cJSON *j_progress = cJSON_GetObjectItemCaseSensitive(root, "progress_ms");
+  uint32_t progress = j_progress && cJSON_IsNumber(j_progress) ? (uint32_t)j_progress->valuedouble : 0;
+
+  // item
+  cJSON *j_item = cJSON_GetObjectItemCaseSensitive(root, "item");
+  if (j_item) {
+    // track name
+    cJSON *j_name = cJSON_GetObjectItemCaseSensitive(j_item, "name");
+    std::string name = j_name && cJSON_IsString(j_name) ? j_name->valuestring : "";
+
+    // duration_ms
+    cJSON *j_dur = cJSON_GetObjectItemCaseSensitive(j_item, "duration_ms");
+    uint32_t duration = j_dur && cJSON_IsNumber(j_dur) ? (uint32_t)j_dur->valuedouble : 0;
+
+    // album
+    cJSON *j_album = cJSON_GetObjectItemCaseSensitive(j_item, "album");
+    std::string album_name, image_url;
+    if (j_album) {
+      cJSON *j_album_name = cJSON_GetObjectItemCaseSensitive(j_album, "name");
+      album_name = j_album_name && cJSON_IsString(j_album_name) ? j_album_name->valuestring : "";
+
+      // images array - take first (largest)
+      cJSON *j_images = cJSON_GetObjectItemCaseSensitive(j_album, "images");
+      if (j_images && cJSON_IsArray(j_images)) {
+        cJSON *j_img = cJSON_GetArrayItem(j_images, 0);
+        if (j_img) {
+          cJSON *j_url = cJSON_GetObjectItemCaseSensitive(j_img, "url");
+          image_url = j_url && cJSON_IsString(j_url) ? j_url->valuestring : "";
+        }
+      }
+    }
+
+    // artists array
+    std::string artist_name;
+    cJSON *j_artists = cJSON_GetObjectItemCaseSensitive(j_item, "artists");
+    if (j_artists && cJSON_IsArray(j_artists)) {
+      cJSON *j_artist = cJSON_GetArrayItem(j_artists, 0);
+      if (j_artist) {
+        cJSON *j_artist_name = cJSON_GetObjectItemCaseSensitive(j_artist, "name");
+        artist_name = j_artist_name && cJSON_IsString(j_artist_name) ? j_artist_name->valuestring : "";
+      }
+    }
+
+    // Update state
+    bool changed = (name != this->web_api_track_) || (artist_name != this->web_api_artist_);
+
+    this->web_api_track_ = name;
+    this->web_api_artist_ = artist_name;
+    this->web_api_album_ = album_name;
+    this->web_api_image_url_ = image_url;
+    this->web_api_duration_ms_ = duration;
+    this->web_api_position_ms_ = progress;
+    this->web_api_position_updated_at_ = millis();
+    this->web_api_is_playing_ = playing;
+    this->web_api_has_data_ = true;
+    this->web_api_last_success_ms_ = millis();
+
+    ESP_LOGI(TAG, "Web API: %s — %s (%s) [%u/%u ms] playing=%d",
+             name.c_str(), artist_name.c_str(), album_name.c_str(),
+             progress, duration, playing ? 1 : 0);
+
+    // Publish to sensors ONLY if we're not the active device
+    // (when we ARE the active device, SPIRC events handle the sensors)
+    if (!this->is_playing_) {
+      if (changed || this->meta_q_hdl_) {
+        SpotifyMetaUpdate upd{};
+        strncpy(upd.title,     name.c_str(),      sizeof(upd.title)     - 1);
+        strncpy(upd.artist,    artist_name.c_str(),sizeof(upd.artist)    - 1);
+        strncpy(upd.album,     album_name.c_str(), sizeof(upd.album)     - 1);
+        strncpy(upd.image_url, image_url.c_str(),  sizeof(upd.image_url) - 1);
+        xQueueOverwrite(this->meta_q_hdl_, &upd);
+      }
+      if (this->duration_sensor_)
+        this->duration_sensor_->publish_state(static_cast<float>(duration) / 1000.0f);
+      if (this->position_sensor_)
+        this->position_sensor_->publish_state(static_cast<float>(progress) / 1000.0f);
+    }
+    if (this->is_playing_sensor_)
+      this->is_playing_sensor_->publish_state(playing);
+  }
+
+  cJSON_Delete(root);
+}
+
+void SpotifyConnectComponent::web_api_poll_() {
+  if (!this->cspot_context_ || !this->spirc_handler_) {
+    return; // Not authenticated yet
+  }
+
+  // Only poll when we're NOT actively playing (SPIRC handles active playback)
+  if (this->is_playing_) {
+    return;
+  }
+
+  // Only poll if we have network
+  if (!this->network_initialized_) {
+    return;
+  }
+
+  // Rate limit: every 10 seconds
+  uint32_t now = millis();
+  if (now - this->web_api_last_poll_ms_ < 10000) {
+    return;
+  }
+  this->web_api_last_poll_ms_ = now;
+
+  // Don't start a new poll if one is running
+  if (this->web_api_task_running_) {
+    return;
+  }
+
+  this->web_api_task_running_ = true;
+  xTaskCreate(
+    web_api_task_wrapper_, "web_api_poll", 16384, this, 3,
+    &this->web_api_task_handle_);
 }
 
 }

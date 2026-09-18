@@ -15,6 +15,7 @@
 #include "esphome/components/speaker/speaker.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/core/gpio.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -28,6 +29,7 @@
 #include "LoginBlob.h"
 #include "BellLogger.h"
 #include "CircularBuffer.h"
+#include "AccessKeyFetcher.h"
 
 #ifdef USE_AUDIO_DAC
 #include "esphome/components/audio_dac/audio_dac.h"
@@ -56,6 +58,7 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   void set_album_art_url_sensor(text_sensor::TextSensor *s) { album_art_url_sensor_ = s; }
   void set_duration_sensor(sensor::Sensor *s) { duration_sensor_ = s; }
   void set_position_sensor(sensor::Sensor *s) { position_sensor_ = s; }
+  void set_is_playing_sensor(binary_sensor::BinarySensor *s) { is_playing_sensor_ = s; }
 #ifdef USE_AUDIO_DAC
   void set_audio_dac(audio_dac::AudioDac *dac) { audio_dac_ = dac; }
 #endif
@@ -84,6 +87,12 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   static void packet_task_wrapper_(void *param);
   static void playback_task_wrapper_(void *param);
   void handle_spirc_event_(std::unique_ptr<cspot::SpircHandler::Event> event);
+
+  // === WEB API POLLING: fetch "now playing" when ESP32 is NOT the active device ===
+  void web_api_poll_();
+  static void web_api_task_wrapper_(void *param);
+  void run_web_api_poll_();
+  std::string get_web_api_token_();
 
   // === AUTO-RECONNECT: save/load Spotify credentials in NVS ===
   std::string nvs_load_cred_();
@@ -152,6 +161,15 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   QueueHandle_t meta_q_hdl_{nullptr};
   sensor::Sensor *duration_sensor_{nullptr};
   sensor::Sensor *position_sensor_{nullptr};
+  binary_sensor::BinarySensor *is_playing_sensor_{nullptr};
+
+  // === WEB API POLLING state ===
+  std::shared_ptr<cspot::AccessKeyFetcher> web_api_key_fetcher_{nullptr};
+  uint32_t web_api_last_poll_ms_{0};
+  uint32_t web_api_last_success_ms_{0};
+  bool web_api_task_running_{false};
+  TaskHandle_t web_api_task_handle_{nullptr};
+  std::atomic<bool> web_api_poll_requested_{false};
 
   std::string current_track_;
   std::string current_artist_;
@@ -161,6 +179,17 @@ class SpotifyConnectComponent : public media_player::MediaPlayer,
   uint32_t media_position_ms_{0};
   uint32_t media_position_updated_at_{0};
   uint32_t last_position_publish_ms_{0};
+
+  // === WEB API: last-known "now playing" state (for display when not active device) ===
+  std::string web_api_track_;
+  std::string web_api_artist_;
+  std::string web_api_album_;
+  std::string web_api_image_url_;
+  uint32_t web_api_duration_ms_{0};
+  uint32_t web_api_position_ms_{0};
+  uint32_t web_api_position_updated_at_{0};
+  bool web_api_is_playing_{false};
+  bool web_api_has_data_{false};
 };
 
 }
